@@ -1,7 +1,120 @@
-from fastapi import APIRouter, FastAPI
+from typing_extensions import Annotated
+from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel
+from models import Users
+from passlib.context import CryptContext
+from sqlalchemy.orm import Session
+from database import SessionLocal
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from jose import JWTError, jwt
+from datetime import datetime, timedelta, timezone
 
-router = APIRouter()
+def get_db():
+    """Dependency to get DB session, opens and closes it properly."""
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+        
+router = APIRouter(
+    prefix="/auth",
+    tags=["auth"],
+)
 
-@router.get("/auth/")
-async def get_user():
-    return {"user": "authenticated"}
+SECRET_KEY = "2c48fd8a1198aaea2caed6855b450d13268e82477e7712cd2edbc8c8b72038dd"
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 20
+
+bcrypt_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+oauth2_bearer = OAuth2PasswordBearer(tokenUrl="auth/token")
+class CreateUserRequest(BaseModel):
+    username: str
+    email: str
+    first_name: str
+    last_name: str
+    password: str
+    role: str
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str
+
+db_dependency = Annotated[Session, Depends(get_db)]
+
+def authenticate_user(username: str, password: str, db: Session) -> Users | None:
+    """Authenticate user by querying the database"""
+    user = db.query(Users).filter(Users.username == username).first()
+    if not user or user is None:
+        return False
+    elif not bcrypt_context.verify(password, user.hashed_password):
+        return False
+    return user
+
+def create_access_token(username: str, user_id: int, role: str, expires_delta: timedelta):
+    """Creates a JWT access token for the authenticated user."""
+    encode = {
+        'sub': username,
+        'id': user_id,
+        'role': role
+    }
+    expires = datetime.now(timezone.utc) + expires_delta
+    encode.update({'exp': expires})
+    return jwt.encode(encode, SECRET_KEY, algorithm=ALGORITHM)
+
+async def get_current_user(token: Annotated[str, Depends(oauth2_bearer)], db: db_dependency) -> dict:
+    try:
+        payload=jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        if payload is not None:
+            username: str = payload.get("sub")
+            user_id: int = payload.get("id")
+            user_role: str = payload.get("role")
+            if username is None or user_id is None:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Could not validate credentials",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+            return {"username": username, "id": user_id, "user_role": user_role}
+    except JWTError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+
+@router.post("/", status_code=status.HTTP_201_CREATED)
+async def create_user(user_request: CreateUserRequest, db: db_dependency):
+    """
+    This function will create a new user in the database.
+    """
+    create_user_model = Users(
+        username = user_request.username,
+        email = user_request.email,
+        first_name = user_request.first_name,
+        last_name = user_request.last_name,
+        role = user_request.role,
+        hashed_password = bcrypt_context.hash(user_request.password),
+        is_active = True
+    )
+    db.add(create_user_model)
+    db.commit()
+
+@router.post("/token", response_model=Token, status_code=status.HTTP_200_OK)
+async def login_for_access_token(form_data: Annotated[OAuth2PasswordRequestForm, Depends()], db: db_dependency) -> Token:
+    """
+    This function will handle user login and token generation.
+    """
+    user = authenticate_user(form_data.username, form_data.password, db)
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    token = create_access_token(
+        user.username, user.id, user.role, timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    )
+    return Token(access_token=token, token_type="bearer")
