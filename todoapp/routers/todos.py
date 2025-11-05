@@ -1,0 +1,92 @@
+from fastapi import APIRouter, Depends, HTTPException, Path, status
+from models import Todos
+from database import engine, SessionLocal
+from typing import Annotated
+from sqlalchemy.orm import Session
+from pydantic import BaseModel, Field
+
+router = APIRouter()
+
+
+def get_db():
+    """Dependency to get DB session, opens and closes it properly."""
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+        
+db_dependency = Annotated[Session, Depends(get_db)]
+
+class TodoRequest(BaseModel):
+    title: str = Field(min_length=1)
+    description: str = Field(min_length=1, max_length=300)
+    priority: int = Field(ge=1, le=5)
+    complete: bool = Field(default=False)
+
+@router.get("/", status_code=status.HTTP_200_OK)
+async def read_all(db: db_dependency):
+    """
+    Read all todo records from the database.
+    Parameters:
+    * db: The database session.
+    * Depends is dependency injection system of FastAPI.
+    Here we are injecting the database session into the path operation function.
+    This function will read all todo records from the database and return them.
+    """
+    return db.query(Todos).all()
+
+@router.get("/todo/{todo_id}", status_code=status.HTTP_200_OK)
+async def read_todo(db: db_dependency, todo_id: int = Path(gt=0), ):
+    """
+    This function will read a specific todo record by its ID from the database and return it.
+    """
+    todo_model = db.query(Todos).filter(Todos.id == todo_id).first() #.first() returns the first result of the query and saves performance
+
+    if todo_model is not None:
+        return todo_model
+    raise HTTPException(status_code=404, detail=f"Todo with the id {todo_id} not found")
+
+
+@router.post("/todo", status_code=status.HTTP_201_CREATED)
+async def create_todo(db: db_dependency, todo_request: TodoRequest):
+    """
+        This function will create a new todo record in the database.
+    """
+    todo_model = Todos(**todo_request.model_dump())  # unpacking the fields from the Pydantic model to the SQLAlchemy model
+    db.add(todo_model)
+    db.commit()
+
+@router.put("/todo/{todo_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def update_todo(db: db_dependency, 
+                      todo_request: TodoRequest, 
+                      todo_id: int = Path(gt=0)):
+    """
+    This function will update an existing todo record in the database.
+    """
+    todo_model = db.query(Todos).filter(Todos.id == todo_id).first()
+
+    if todo_model is None:
+        raise HTTPException(status_code=404, detail=f"Todo with the id {todo_id} not found")
+    
+    # use setattr to update attributes
+    setattr(todo_model, 'title', todo_request.title)
+    setattr(todo_model, 'description', todo_request.description)
+    setattr(todo_model, 'priority', todo_request.priority)
+    setattr(todo_model, 'complete', todo_request.complete)
+
+    db.add(todo_model)
+    db.commit()
+
+@router.delete("/todo/{todo_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_todo(db: db_dependency, todo_id: int = Path(gt=0)):
+    """
+    This function will delete a todo record from the database.
+    """
+    todo_model = db.query(Todos).filter(Todos.id == todo_id).first()
+
+    if todo_model is None:
+        raise HTTPException(status_code=404, detail=f"Todo with the id {todo_id} not found")
+    
+    db.query(Todos).filter(Todos.id == todo_id).delete()
+    db.commit()
