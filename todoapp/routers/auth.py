@@ -46,9 +46,9 @@ def authenticate_user(username: str, password: str, db: Session) -> Users | None
     """Authenticate user by querying the database"""
     user = db.query(Users).filter(Users.username == username).first()
     if not user or user is None:
-        return False
+        return None
     elif not bcrypt_context.verify(password, user.hashed_password):
-        return False
+        return None
     return user
 
 def create_access_token(username: str, user_id: int, role: str, expires_delta: timedelta):

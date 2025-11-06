@@ -23,6 +23,11 @@ def get_db():
 db_dependency = Annotated[Session, Depends(get_db)]
 user_dependency = Annotated[dict, Depends(get_current_user)]
 
+class UserVerification(BaseModel):
+    password: str
+    new_password: str
+
+
 @router.get("/", status_code=status.HTTP_200_OK)
 async def read_user(user: user_dependency, db: db_dependency):
     """
@@ -35,21 +40,19 @@ async def read_user(user: user_dependency, db: db_dependency):
         raise HTTPException(status_code=404, detail="User not found.")
     return user_model
 
-@router.post("/change-password", status_code=status.HTTP_200_OK)
-async def change_password(user: user_dependency, db: db_dependency, new_password: str, current_password: str):
+@router.put("/password", status_code=status.HTTP_204_NO_CONTENT)
+async def change_password(user: user_dependency, db: db_dependency, user_verification: UserVerification):
     """
     Change your password.
     """
+    if user is None:
+        raise HTTPException(status_code=401, detail="Authentication failed or not authorized.")
     user_model = db.query(Users).filter(Users.id == user.get("id")).first()
     if user_model is None:
         raise HTTPException(status_code=404, detail="User not found.")
-    #check the old password
-    authenticated_user = authenticate_user(user_model.username, current_password, db)
-    if not authenticated_user:
-        raise HTTPException(status_code=401, detail="Current password is incorrect.")
-    else:
-        hashed_new_password = bcrypt_context.hash(new_password)
-        user_model.hashed_password = hashed_new_password
-        db.add(user_model)
-        db.commit()
-    return {"detail": "Password updated successfully."}
+    if not bcrypt_context.verify(user_verification.password, user_model.hashed_password):
+        raise HTTPException(status_code=403, detail="Current password is incorrect.")
+    user_model.hashed_password = bcrypt_context.hash(user_verification.new_password)
+    db.add(user_model)
+    db.commit()
+    
