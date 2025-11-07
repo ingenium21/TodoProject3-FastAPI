@@ -6,6 +6,10 @@ __pycache__/
 # C extensions
 *.so
 
+#alembic
+alembic/
+alembic.ini
+
 # any local dbs
 *.db
 
