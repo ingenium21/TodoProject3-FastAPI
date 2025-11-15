@@ -1,10 +1,10 @@
 from typing_extensions import Annotated
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
-from models import Users
+from ..models import Users
 from passlib.context import CryptContext
 from sqlalchemy.orm import Session
-from database import SessionLocal
+from ..database import SessionLocal
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError, jwt
 from datetime import datetime, timedelta, timezone
