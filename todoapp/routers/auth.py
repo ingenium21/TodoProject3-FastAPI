@@ -1,5 +1,5 @@
 from typing_extensions import Annotated
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from pydantic import BaseModel
 from ..models import Users
 from passlib.context import CryptContext
@@ -8,6 +8,7 @@ from ..database import SessionLocal
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError, jwt
 from datetime import datetime, timedelta, timezone
+from fastapi.templating import Jinja2Templates
 
 def get_db():
     """Dependency to get DB session, opens and closes it properly."""
@@ -44,6 +45,20 @@ class Token(BaseModel):
 
 db_dependency = Annotated[Session, Depends(get_db)]
 
+templates = Jinja2Templates(directory="todoapp/templates")
+
+
+### PAGES ###
+
+@router.get("/login-page")
+def render_login_page(request: Request):
+    return templates.TemplateResponse("login.html", {"request": request})
+
+@router.get("/register-page")
+def render_register_page(request: Request):
+    return templates.TemplateResponse("register.html", {"request": request})
+
+### ENDPOINTS ###
 def authenticate_user(username: str, password: str, db: Session) -> Users | None:
     """Authenticate user by querying the database"""
     user = db.query(Users).filter(Users.username == username).first()
@@ -64,7 +79,7 @@ def create_access_token(username: str, user_id: int, role: str, expires_delta: t
     encode.update({'exp': expires})
     return jwt.encode(encode, SECRET_KEY, algorithm=ALGORITHM)
 
-async def get_current_user(token: Annotated[str, Depends(oauth2_bearer)], db: db_dependency) -> dict:
+async def get_current_user(token: Annotated[str, Depends(oauth2_bearer)]) -> dict:
     try:
         payload=jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         if payload is not None:
