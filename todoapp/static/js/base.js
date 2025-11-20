@@ -1,8 +1,6 @@
     // Add Todo JS
     // Debug test
     window.onload = function() {
-        console.log("Window loaded - testing console");
-        alert("Script is running"); // Temporary to confirm execution
     };
     const todoForm = document.getElementById('todoForm');
     if (todoForm) {
@@ -64,12 +62,11 @@
 
         try {
             const token = getCookie('access_token');
-            console.log(token)
             if (!token) {
                 throw new Error('Authentication token not found');
             }
 
-            console.log(`${todoId}`)
+            //console.log(`${todoId}`)
 
             const response = await fetch(`/todos/todo/${todoId}`, {
                 method: 'PUT',
@@ -171,7 +168,6 @@
     }
 
     // Register JS
-    console.log("Base JS loaded");
     const registerForm = document.getElementById('registerForm');
     if (registerForm) {
         registerForm.addEventListener('submit', async function (event) {
